@@ -98,16 +98,17 @@ class Taikyoku(Base):
             message: dict[str, str],
             send_to_tenhou: Callable[[dict], Awaitable[None]],
             send_to_mjai: Callable[[dict], Awaitable[dict]]):
-        sent = {'type': 'start_game', 'id': 0, 'names': []}
+        sent = {'type': 'start_game', 'id': 0, 'names': ['A','B','C']} # FIXME : 'names' are dummy..
+        oya = int(message['oya'])
 
-        if 'log' in message:
-            oya = int(message['oya'])
+        if 'log' in message:    
             log = message['log']
             seat = (4 - oya) % 4
             log_url = 'https://tenhou.net/3/?log={}&tw={}'.format(log, seat)
             logger.info('log({}): {}'.format(state.name, log_url))
             sent['log'] = log_url
 
+        state.empty_index = (oya + 3) % 4 # for 3-player
         await send_to_mjai(sent)
         await send_to_tenhou({'tag': 'NEXTREADY'})
 
@@ -125,6 +126,7 @@ class Init(Base):
             send_to_tenhou: Callable[[dict], Awaitable[None]],
             send_to_mjai: Callable[[dict], Awaitable[dict]]):
         state.hand = [int(s) for s in message['hai'].split(',')]
+        state.hand.sort()
         state.in_riichi = False
         state.live_wall = 70
         state.melds.clear()
@@ -132,12 +134,12 @@ class Init(Base):
 
         oya = int(message['oya'])
         seed = [int(s) for s in message['seed'].split(',')]
-        bakaze = self.bakaze[seed[0] // 4]
-        kyoku = seed[0] % 4
+        bakaze = self.bakaze[seed[0] // 3]
+        kyoku = seed[0] % 3 + 1
         honba = seed[1]
         kyotaku = seed[2]
         dora_marker = tenhou_to_mjai_one(seed[5])
-        tehais = [['?' for _ in range(13)]] * 4
+        tehais = [['?' for _ in range(13)]] * 3
         tehais[0] = tenhou_to_mjai(state.hand)
 
         sent = {
@@ -168,6 +170,8 @@ class Tsumo(Base):
 
         tag = message['tag']
         actor = ord(tag[0]) - ord('T')
+        if state.empty_index < actor :
+            actor -= 1
         possible_actions = []
 
         sent = {
@@ -240,6 +244,11 @@ class Tsumo(Base):
                 await utils.random_sleep(1, 2)
                 hai = mjai_to_tenhou_one(state, received['pai'])
                 await send_to_tenhou({'tag': 'N', 'type': 5, 'hai': hai})
+            elif received['type'] == 'nukidora':
+                # 北ドラ
+                await utils.random_sleep(1, 2)
+                hai = mjai_to_tenhou_one(state, 'N')
+                await send_to_tenhou({'tag': 'N', 'type': 10, 'hai' : hai})
         else:
             await send_to_mjai(sent)
 
@@ -295,6 +304,8 @@ class Dahai(Base):
             send_to_mjai: Callable[[dict], Awaitable[dict]]):
         tag = message['tag']
         actor = ord(str.upper(tag[0])) - ord('D')
+        if state.empty_index < actor :
+            actor -= 1
         index = int(tag[1:])
         pai = tenhou_to_mjai_one(index)
         tsumogiri = str.isupper(tag[0]) if actor != 0 else index == state.hand[-1]
@@ -405,9 +416,11 @@ class Naki(Base):
             send_to_tenhou: Callable[[dict], Awaitable[None]],
             send_to_mjai: Callable[[dict], Awaitable[dict]]):
         actor = int(message['who'])
+        if state.empty_index < actor :
+            actor -= 1
         m = int(message['m'])
         meld = Meld.parse_meld(m)
-        target = (actor + meld.target) % 4
+        target = (actor + meld.target) % 3
 
         sent = {
             'type': meld.meld_type,
@@ -460,6 +473,8 @@ class ReachStep1(Base):
             send_to_tenhou: Callable[[dict], Awaitable[None]],
             send_to_mjai: Callable[[dict], Awaitable[dict]]):
         actor = int(message['who'])
+        if state.empty_index < actor :
+            actor -= 1
         sent = {'type': 'reach', 'actor': actor}
 
         if actor == 0:
@@ -504,9 +519,13 @@ class ReachStep2(Base):
             state.wait = isrh(to_34_array(state.hand))
 
         actor = int(message['who'])
-        deltas = [0] * 4
+        if state.empty_index < actor :
+            actor -= 1
+        deltas = [0] * 3
         deltas[actor] = -1000
-        scores = [int(s) * 100 for s in message['ten'].split(',')]
+        ten = message['ten'].split(',')
+        ten.pop(state.empty_index) # for 3-player
+        scores = [int(s) * 100 for s in ten]
         await send_to_mjai({
             'type': 'reach_accepted',
             'actor': actor,
@@ -541,6 +560,7 @@ class Agari(Base):
             send_to_tenhou: Callable[[dict], Awaitable[None]],
             send_to_mjai: Callable[[dict], Awaitable[dict]]):
         scores = parse_sc_tag(message)
+        scores.pop(state.empty_index) # for 3-player 
         await send_to_mjai({'type': 'hora', 'scores': scores})
         await send_to_mjai({'type': 'end_kyoku'})
         await send_to_tenhou({'tag': 'NEXTREADY'})
@@ -557,6 +577,7 @@ class Ryuukyoku(Base):
             send_to_tenhou: Callable[[dict], Awaitable[None]],
             send_to_mjai: Callable[[dict], Awaitable[dict]]):
         scores = parse_sc_tag(message)
+        scores.pop(state.empty_index) # for 3-player 
         await send_to_mjai({'type': 'ryukyoku', 'scores': scores})
         await send_to_mjai({'type': 'end_kyoku'})
         await send_to_tenhou({'tag': 'NEXTREADY'})
@@ -573,6 +594,7 @@ class End(Base):
             send_to_tenhou: Callable[[dict], Awaitable[None]],
             send_to_mjai: Callable[[dict], Awaitable[dict]]):
         scores = parse_sc_tag(message)
+        scores.pop(state.empty_index) # for 3-player 
 
         if message['tag'] == 'AGARI':
             await send_to_mjai({'type': 'hora', 'scores': scores})
@@ -581,6 +603,7 @@ class End(Base):
 
         await send_to_mjai({'type': 'end_kyoku'})
         scores = parse_owari_tag(message)
+        scores.pop(state.empty_index) # for 3-player 
 
         try:
             await send_to_mjai({'type': 'end_game', 'scores': scores})

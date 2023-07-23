@@ -101,7 +101,7 @@ async def tcp_server(reader: StreamReader, writer: StreamWriter) -> None:
     name: str = message['name']
     room: str = message['room']
 
-    if re.match(r'^(?:0|[1-7][0-9]{3})_(?:0|1|9)$', room):
+    if re.match(r'^(?:0|[1-7][0-9]{3})_(?:16|17|25)$', room):
         state = State(name, room)
         await websocket_client(send_to_mjai, state)
     else:

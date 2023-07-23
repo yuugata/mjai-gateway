@@ -9,6 +9,7 @@ class Meld:
     KAKAN = 'kakan'
     DAIMINKAN = 'daiminkan'
     ANKAN = 'ankan'
+    NUKIDORA = 'nukidora'
 
     def __init__(self, target: int, meld_type: str, tiles: list[int], unused: int | None = None, r: int | None = None):
         self.target: int = target
@@ -23,14 +24,14 @@ class Meld:
 
     @property
     def consumed(self) -> list[str]:
-        if self.meld_type == self.ANKAN:
+        if self.meld_type == self.ANKAN or self.meld_type == self.NUKIDORA:
             return tenhou_to_mjai(self.tiles)
         else:
             return tenhou_to_mjai(self.tiles[1:])
 
     @property
     def exposed(self) -> list[int]:
-        if self.meld_type == self.ANKAN:
+        if self.meld_type == self.ANKAN or self.meld_type == self.NUKIDORA:
             return self.tiles
         elif self.meld_type == self.KAKAN:
             return self.tiles[0:1]
@@ -48,6 +49,9 @@ class Meld:
         elif m & (1 << 4):
             # 加槓
             return Meld.parse_kakan(m)
+        elif m & (1 << 5):
+            # 北抜き
+            return Meld.parse_nukidora(m)
         else:
             # 大明槓, 暗槓
             return Meld.parse_daiminkan_ankan(m)
@@ -89,6 +93,12 @@ class Meld:
         h[0], h[r] = h[r], h[0]
         h = [added, *h]
         return Meld(m & 3, Meld.KAKAN, h)
+
+    @staticmethod
+    def parse_nukidora(m: int) -> 'Meld':
+        t = (m >> 8)
+        h = [t]
+        return Meld(m & 3, Meld.NUKIDORA, h)
 
     @staticmethod
     def parse_daiminkan_ankan(m: int) -> 'Meld':

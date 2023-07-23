@@ -15,3 +15,5 @@ class State:
         self.melds: list[Meld] = []
         # 待ち
         self.wait: set[int] = set()
+        # 空き番
+        self.empty_index: int | None = None
